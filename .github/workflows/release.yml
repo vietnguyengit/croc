@@ -166,7 +166,8 @@ jobs:
               LDFLAGS='-s -w -buildid= -extldflags "-static"'
               ;;
           esac
-          
+          LDFLAGS="$LDFLAGS -X 'github.com/schollz/croc/v11/src/version.Value=${{ github.event.release.name }}'"
+
           echo "Building for ${{ matrix.goos }}/${{ matrix.goarch }} with LDFLAGS: $LDFLAGS"
           go build -buildvcs=false -trimpath -tags netgo,osusergo -ldflags "$LDFLAGS" -o croc${{ matrix.ext }}
 
