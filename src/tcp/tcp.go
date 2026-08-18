@@ -5,10 +5,12 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/coder/websocket"
 	log "github.com/schollz/logger"
 	"github.com/schollz/pake/v3"
 
@@ -252,91 +254,96 @@ func (s *server) run() (err error) {
 		s.stop.wg.Add(1)
 		go func(connection net.Conn, handshakeDeadline time.Time) {
 			defer s.stop.wg.Done()
-			handshakePending := true
-			releaseHandshake := func() {
-				if handshakePending {
-					<-s.handshakeSlots
-					handshakePending = false
-				}
-			}
-			defer releaseHandshake()
-			stopCloseOnCancel := context.AfterFunc(s.stop.ctx, func() {
-				connection.Close()
-			})
-			defer stopCloseOnCancel()
-
-			c := comm.New(connection)
-			handshake, errCommunication := s.clientHandshake(c, handshakeDeadline)
-			releaseHandshake()
-			room := handshake.room
-			log.Debugf("room: %+v", room)
-			log.Debugf("err: %+v", errCommunication)
-			if errCommunication != nil {
-				if netErr, ok := errCommunication.(net.Error); ok && netErr.Timeout() {
-					log.Debugf("relay-%s: handshake timed out", connection.RemoteAddr().String())
-				} else {
-					log.Debugf("relay-%s: %s", connection.RemoteAddr().String(), errCommunication.Error())
-				}
-				connection.Close()
-				return
-			}
-			if room == pingRoom {
-				log.Debugf("got ping")
-				connection.Close()
-				return
-			}
-			if err := connection.SetDeadline(time.Time{}); err != nil {
-				log.Debugf("relay-%s: failed to clear handshake deadline: %v", connection.RemoteAddr().String(), err)
-				connection.Close()
-				return
-			}
-			room, errCommunication = s.clientCommunication(c, handshake)
-			if errCommunication != nil {
-				log.Debugf("relay-%s: %s", connection.RemoteAddr().String(), errCommunication.Error())
-				connection.Close()
-				return
-			}
-			ticker := time.NewTicker(1 * time.Second)
-			defer ticker.Stop()
-			for {
-				// check connection
-				log.Tracef("checking connection of room %s for %+v", room, c)
-				deleteIt := false
-				s.rooms.Lock()
-				roomData, ok := s.rooms.rooms[room]
-				if !ok {
-					log.Debug("room is gone")
-					s.rooms.Unlock()
-					return
-				}
-				log.Tracef("room: %+v", roomData)
-				if roomData.first != nil && roomData.second != nil {
-					log.Debug("rooms ready")
-					s.rooms.Unlock()
-					break
-				}
-				if roomData.first != nil {
-					errSend := roomData.first.Send([]byte{1})
-					if errSend != nil {
-						log.Debug(errSend)
-						deleteIt = true
-					}
-				}
-				s.rooms.Unlock()
-				if deleteIt {
-					s.deleteRoom(room)
-					break
-				}
-				select {
-				case <-s.stop.ctx.Done():
-					log.Tracef("check: %v", s.stop.ctx.Err())
-					s.deleteRoom(room)
-					return
-				case <-ticker.C:
-					// time.Sleep(1 * time.Second)
-				}
-			}
+			s.handleConn(connection, handshakeDeadline)
 		}(connection, handshakeDeadline)
+	}
+}
+
+// handleConn runs the relay protocol for one accepted connection.
+// The caller must have already acquired a handshakeSlot before calling;
+// handleConn releases it when the handshake completes.
+func (s *server) handleConn(connection net.Conn, handshakeDeadline time.Time) {
+	handshakePending := true
+	releaseHandshake := func() {
+		if handshakePending {
+			<-s.handshakeSlots
+			handshakePending = false
+		}
+	}
+	defer releaseHandshake()
+	stopCloseOnCancel := context.AfterFunc(s.stop.ctx, func() {
+		connection.Close()
+	})
+	defer stopCloseOnCancel()
+
+	c := comm.New(connection)
+	handshake, errCommunication := s.clientHandshake(c, handshakeDeadline)
+	releaseHandshake()
+	room := handshake.room
+	log.Debugf("room: %+v", room)
+	log.Debugf("err: %+v", errCommunication)
+	if errCommunication != nil {
+		if netErr, ok := errCommunication.(net.Error); ok && netErr.Timeout() {
+			log.Debugf("relay-%s: handshake timed out", connection.RemoteAddr().String())
+		} else {
+			log.Debugf("relay-%s: %s", connection.RemoteAddr().String(), errCommunication.Error())
+		}
+		connection.Close()
+		return
+	}
+	if room == pingRoom {
+		log.Debugf("got ping")
+		connection.Close()
+		return
+	}
+	if err := connection.SetDeadline(time.Time{}); err != nil {
+		log.Debugf("relay-%s: failed to clear handshake deadline: %v", connection.RemoteAddr().String(), err)
+		connection.Close()
+		return
+	}
+	room, errCommunication = s.clientCommunication(c, handshake)
+	if errCommunication != nil {
+		log.Debugf("relay-%s: %s", connection.RemoteAddr().String(), errCommunication.Error())
+		connection.Close()
+		return
+	}
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	for {
+		log.Tracef("checking connection of room %s for %+v", room, c)
+		deleteIt := false
+		s.rooms.Lock()
+		roomData, ok := s.rooms.rooms[room]
+		if !ok {
+			log.Debug("room is gone")
+			s.rooms.Unlock()
+			return
+		}
+		log.Tracef("room: %+v", roomData)
+		if roomData.first != nil && roomData.second != nil {
+			log.Debug("rooms ready")
+			s.rooms.Unlock()
+			break
+		}
+		if roomData.first != nil {
+			errSend := roomData.first.Send([]byte{1})
+			if errSend != nil {
+				log.Debug(errSend)
+				deleteIt = true
+			}
+		}
+		s.rooms.Unlock()
+		if deleteIt {
+			s.deleteRoom(room)
+			break
+		}
+		select {
+		case <-s.stop.ctx.Done():
+			log.Tracef("check: %v", s.stop.ctx.Err())
+			s.deleteRoom(room)
+			return
+		case <-ticker.C:
+		}
 	}
 }
 
@@ -634,6 +641,86 @@ func pipe(conn1 net.Conn, conn2 net.Conn) {
 			}
 		}
 	}
+}
+
+// RunWS starts a WebSocket relay server. Cloudflare Tunnel (or any TLS
+// terminator) should sit in front; this server speaks plain ws://.
+func RunWS(debugLevel, host, port, password string, banner ...string) error {
+	s := newDefaultServer()
+	s.host = host
+	s.port = port
+	s.password = password
+	s.debugLevel = debugLevel
+	if len(banner) > 0 {
+		s.banner = banner[0]
+	}
+	return s.startWS()
+}
+
+func (s *server) startWS() (err error) {
+	log.SetLevel(s.debugLevel)
+	s.rooms.Lock()
+	s.rooms.rooms = make(map[string]roomInfo)
+	s.rooms.Unlock()
+	s.handshakeSlots = make(chan struct{}, s.maxPendingHandshakes)
+	s.stop.wg.Add(1)
+	go func() {
+		defer s.stop.wg.Done()
+		s.deleteOldRooms()
+	}()
+	defer s.stop.Cancel()
+	if s.stop.gui {
+		defer s.stop.wg.Wait()
+	}
+	err = s.runWS()
+	err = Ignore(err)
+	if err != nil {
+		log.Error(err)
+	}
+	return
+}
+
+func (s *server) runWS() error {
+	addr := net.JoinHostPort(s.host, s.port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("error listening on %s: %w", addr, err)
+	}
+	log.Infof("starting WebSocket relay on %s", addr)
+	close(s.started)
+
+	httpSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			wsConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+				InsecureSkipVerify: true, // origin check bypassed; PAKE handles auth
+			})
+			if err != nil {
+				log.Debugf("ws accept: %v", err)
+				return
+			}
+			netConn := websocket.NetConn(context.Background(), wsConn, websocket.MessageBinary)
+			select {
+			case s.handshakeSlots <- struct{}{}:
+			case <-s.stop.ctx.Done():
+				netConn.Close()
+				return
+			default:
+				log.Debugf("too many pending handshakes, rejecting")
+				netConn.Close()
+				return
+			}
+			handshakeDeadline := time.Now().Add(s.handshakeTimeout)
+			s.stop.wg.Add(1)
+			go func() {
+				defer s.stop.wg.Done()
+				s.handleConn(netConn, handshakeDeadline)
+			}()
+		}),
+	}
+	context.AfterFunc(s.stop.ctx, func() {
+		httpSrv.Close()
+	})
+	return httpSrv.Serve(ln)
 }
 
 func PingServer(address string) (err error) {
