@@ -28,14 +28,6 @@ FROM alpine:latest
 
 EXPOSE 8080
 EXPOSE 9009
-EXPOSE 9010
-EXPOSE 9011
-EXPOSE 9012
-EXPOSE 9013
-EXPOSE 9014
-EXPOSE 9015
-EXPOSE 9016
-EXPOSE 9017
 
 COPY --from=builder /out/croc /out/croc-web /go/croc/croc-entrypoint.sh /
 
@@ -54,4 +46,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     done'
 
 ENTRYPOINT ["/croc-entrypoint.sh"]
-CMD ["relay"]
+CMD ["relay", "--websocket"]
