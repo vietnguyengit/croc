@@ -1621,7 +1621,7 @@ func ShowReceiveCommandQrCode(command string) {
 }
 
 func webReceiveURL(code string) string {
-	return "https://getcroc.com/?code=" + url.QueryEscape(code)
+	return "https://link.vietnguyen.au/?code=" + url.QueryEscape(code)
 }
 
 type peerDiscoveryResult struct {
@@ -2458,7 +2458,11 @@ func (c *Client) activateSecureChannel(attempt *transferAttemptState) (err error
 			defer wg.Done()
 			var server string
 			if isWebSocketRelay {
-				server = relayHost
+				if idx := strings.Index(relayHost, "?port="); idx != -1 {
+					server = relayHost[:idx+6] + c.Options.RelayPorts[j]
+				} else {
+					server = relayHost
+				}
 			} else {
 				server = net.JoinHostPort(relayHost, c.Options.RelayPorts[j])
 			}

@@ -18,7 +18,7 @@ const TCP_BUFFER_SIZE = 1024 * 64
 
 // DEFAULT_RELAY is the default relay used (can be set using --relay)
 var (
-	DEFAULT_RELAY      = "wss://tx.vietnguyen.au"
+	DEFAULT_RELAY      = "wss://link.vietnguyen.au/ws?port=9009"
 	DEFAULT_RELAY6     = "croc6.schollz.com"
 	DEFAULT_PORT       = "9009"
 	DEFAULT_PASSPHRASE = "pass123"
