@@ -429,6 +429,9 @@ func normalizeRelayAddress(address string) string {
 	if address == "" {
 		return ""
 	}
+	if strings.HasPrefix(address, "ws://") || strings.HasPrefix(address, "wss://") {
+		return address
+	}
 	host, port, _ := net.SplitHostPort(address)
 	if port == "" {
 		host = address
@@ -1459,15 +1462,14 @@ func (c *Client) Send(filesInfo []FileInfo, emptyFoldersToTransfer []FileInfo, t
 				if address == "" {
 					continue
 				}
-				host, port, _ := net.SplitHostPort(address)
-				log.Debugf("host: '%s', port: '%s'", host, port)
-				// Default port to :9009
-				if port == "" {
-					host = address
-					port = models.DEFAULT_PORT
+				if !strings.HasPrefix(address, "ws://") && !strings.HasPrefix(address, "wss://") {
+					host, port, _ := net.SplitHostPort(address)
+					if port == "" {
+						host = address
+						port = models.DEFAULT_PORT
+					}
+					address = net.JoinHostPort(host, port)
 				}
-				log.Debugf("got host '%v' and port '%v'", host, port)
-				address = net.JoinHostPort(host, port)
 				log.Debugf("trying connection to %s", address)
 				conn, banner, ipaddr, err = tcp.ConnectToTCPServer(address, c.Options.RelayPassword, c.Options.RoomName, durations[i])
 				if err == nil {
@@ -1692,15 +1694,15 @@ func (c *Client) Receive() (err error) {
 		if address == "" {
 			continue
 		}
-		var host, port string
-		host, port, _ = net.SplitHostPort(address)
-		// Default port to :9009
-		if port == "" {
-			host = address
-			port = models.DEFAULT_PORT
+		if !strings.HasPrefix(address, "ws://") && !strings.HasPrefix(address, "wss://") {
+			var host, port string
+			host, port, _ = net.SplitHostPort(address)
+			if port == "" {
+				host = address
+				port = models.DEFAULT_PORT
+			}
+			address = net.JoinHostPort(host, port)
 		}
-		log.Debugf("got host '%v' and port '%v'", host, port)
-		address = net.JoinHostPort(host, port)
 		log.Debugf("trying connection to %s", address)
 		c.conn[0], banner, c.ExternalIP, err = tcp.ConnectToTCPServer(address, c.Options.RelayPassword, c.Options.RoomName, durations[i])
 		if err == nil {
@@ -2348,10 +2350,16 @@ func (c *Client) activateSecureChannel(attempt *transferAttemptState) (err error
 	if relayControlAddress == "" {
 		relayControlAddress = c.Options.RelayAddress
 	}
-	relayControlAddress = normalizeRelayAddress(relayControlAddress)
-	relayHost, _, err := net.SplitHostPort(relayControlAddress)
-	if err != nil {
-		return fmt.Errorf("bad relay address %s: %w", relayControlAddress, err)
+	isWebSocketRelay := strings.HasPrefix(relayControlAddress, "ws://") || strings.HasPrefix(relayControlAddress, "wss://")
+	var relayHost string
+	if isWebSocketRelay {
+		relayHost = relayControlAddress
+	} else {
+		relayControlAddress = normalizeRelayAddress(relayControlAddress)
+		relayHost, _, err = net.SplitHostPort(relayControlAddress)
+		if err != nil {
+			return fmt.Errorf("bad relay address %s: %w", relayControlAddress, err)
+		}
 	}
 
 	if need := len(c.Options.RelayPorts) + 1; len(c.conn) < need {
@@ -2366,7 +2374,12 @@ func (c *Client) activateSecureChannel(attempt *transferAttemptState) (err error
 		log.Debugf("port: [%s]", c.Options.RelayPorts[i])
 		go func(j int) {
 			defer wg.Done()
-			server := net.JoinHostPort(relayHost, c.Options.RelayPorts[j])
+			var server string
+			if isWebSocketRelay {
+				server = relayHost
+			} else {
+				server = net.JoinHostPort(relayHost, c.Options.RelayPorts[j])
+			}
 			log.Debugf("connecting to %s", server)
 			dataConn, _, _, connErr := tcp.ConnectToTCPServer(
 				server,

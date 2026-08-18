@@ -653,6 +653,10 @@ func RunWS(debugLevel, host, port, password string, banner ...string) error {
 	s.debugLevel = debugLevel
 	if len(banner) > 0 {
 		s.banner = banner[0]
+	} else {
+		// Signal 4 data channels to the client; values are ignored for WebSocket
+		// (all channels connect to the same URL, distinguished by room name only).
+		s.banner = "1,2,3,4"
 	}
 	return s.startWS()
 }
