@@ -1,0 +1,8 @@
+services:
+  croc-relay:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9009:9009"
+    environment:
+      CROC_PASS: ${CROC_PASS:-}

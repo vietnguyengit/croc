@@ -2,6 +2,7 @@ package comm
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/magisterquis/connectproxy"
 	"github.com/schollz/croc/v11/src/utils"
 	log "github.com/schollz/logger"
@@ -34,12 +36,28 @@ type Comm struct {
 	connection net.Conn
 }
 
-// NewConnection gets a new comm to a tcp address
+// NewConnection gets a new comm to a tcp address or WebSocket URL (ws:// / wss://)
 func NewConnection(address string, timelimit ...time.Duration) (c *Comm, err error) {
 	tlimit := 30 * time.Second
 	if len(timelimit) > 0 {
 		tlimit = timelimit[0]
 	}
+
+	if strings.HasPrefix(address, "ws://") || strings.HasPrefix(address, "wss://") {
+		dialCtx, cancel := context.WithTimeout(context.Background(), tlimit)
+		defer cancel()
+		wsConn, _, wsErr := websocket.Dial(dialCtx, address, nil)
+		if wsErr != nil {
+			err = fmt.Errorf("comm.NewConnection WebSocket failed: %w", wsErr)
+			log.Debug(err)
+			return
+		}
+		netConn := websocket.NetConn(context.Background(), wsConn, websocket.MessageBinary)
+		c = New(netConn)
+		log.Debugf("connected via WebSocket to '%s'", address)
+		return
+	}
+
 	var connection net.Conn
 	if Socks5Proxy != "" && !utils.IsLocalIP(address) {
 		var dialer proxy.Dialer

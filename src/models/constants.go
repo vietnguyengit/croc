@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/schollz/croc/v11/src/utils"
@@ -85,13 +86,18 @@ func init() {
 	log.Trace("Using internal DNS: ", INTERNAL_DNS)
 	var err error
 	var addr string
-	addr, err = lookup(DEFAULT_RELAY)
-	if err == nil {
-		DEFAULT_RELAY = net.JoinHostPort(addr, DEFAULT_PORT)
+	if strings.HasPrefix(DEFAULT_RELAY, "ws://") || strings.HasPrefix(DEFAULT_RELAY, "wss://") {
+		// WebSocket URL — pass through as-is, no DNS resolution needed
+		log.Tracef("Default relay (WebSocket): %s", DEFAULT_RELAY)
 	} else {
-		DEFAULT_RELAY = ""
+		addr, err = lookup(DEFAULT_RELAY)
+		if err == nil {
+			DEFAULT_RELAY = net.JoinHostPort(addr, DEFAULT_PORT)
+		} else {
+			DEFAULT_RELAY = ""
+		}
+		log.Tracef("Default ipv4 relay: %s", addr)
 	}
-	log.Tracef("Default ipv4 relay: %s", addr)
 	addr, err = lookup(DEFAULT_RELAY6)
 	if err == nil {
 		DEFAULT_RELAY6 = net.JoinHostPort(addr, DEFAULT_PORT)

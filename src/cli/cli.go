@@ -106,6 +106,7 @@ func newApp() *cli.App {
 				&cli.IntFlag{Name: "max-rooms-open", Value: tcp.DEFAULT_MAX_ROOMS_OPEN, Usage: "maximum waiting rooms per relay port", EnvVars: []string{"CROC_MAX_ROOMS_OPEN"}},
 				&cli.IntFlag{Name: "max-pending-handshakes", Value: tcp.DEFAULT_MAX_PENDING_HANDSHAKES, Usage: "maximum incomplete handshakes per relay port", EnvVars: []string{"CROC_MAX_PENDING_HANDSHAKES"}},
 				&cli.DurationFlag{Name: "handshake-timeout", Value: tcp.DEFAULT_HANDSHAKE_TIMEOUT, Usage: "maximum time for an initial relay handshake", EnvVars: []string{"CROC_HANDSHAKE_TIMEOUT"}},
+				&cli.BoolFlag{Name: "websocket", Aliases: []string{"ws"}, Usage: "run relay as a WebSocket server on a single port (for use behind Cloudflare Tunnel or a TLS reverse proxy)"},
 			},
 		},
 		{
@@ -873,6 +874,12 @@ func relay(c *cli.Context) (err error) {
 		debugString = "debug"
 	}
 	host := c.String("host")
+
+	if c.Bool("websocket") {
+		port := strconv.Itoa(c.Int("port"))
+		return tcp.RunWS(debugString, host, port, determinePass(c))
+	}
+
 	var ports []string
 
 	if c.IsSet("ports") {
