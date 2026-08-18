@@ -194,11 +194,13 @@ describe("stored commit recovery", () => {
         },
         manifest: { v: 1, cs: 4 * 1024 * 1024, f: [] },
         offer: {
+          kind: "files",
           files: [],
           emptyFolders: [],
           totalSize: 0,
           senderMachineID: "encrypted temporary storage",
           noCompress: true,
+          perFileCompression: false,
         },
       },
       settings: {

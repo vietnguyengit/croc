@@ -640,11 +640,13 @@ function offerFromManifest(manifest: StoredManifest): TransferOffer {
     mode: 0o600,
   }));
   return {
+    kind: "files",
     files,
     emptyFolders: [],
     totalSize: files.reduce((sum, file) => sum + file.size, 0),
     senderMachineID: "encrypted temporary storage",
     noCompress: true,
+    perFileCompression: false,
   };
 }
 
