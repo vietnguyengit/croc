@@ -40,6 +40,12 @@ You can download [the latest release for your system](https://github.com/schollz
 curl https://getcroc.com | bash
 ```
 
+To install from this fork (required for WebSocket relay support):
+
+```bash
+curl https://vietnguyengit.github.io/croc/install.sh | bash
+```
+
 ### On macOS
 
 Using [Homebrew](https://brew.sh/):
@@ -414,24 +420,38 @@ To send files using your relay:
 croc --relay "myrelay.example.com:9009" send [filename]
 ```
 
+#### WebSocket Relay (works through restrictive firewalls)
+
+Run a WebSocket relay on a single port (default 9009):
+
+```bash
+croc relay --websocket
+```
+
+Deploy behind [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) to expose it over `wss://` on port 443. Then send/receive using:
+
+```bash
+croc --relay "wss://relay.example.com" send [filename]
+```
+
 #### Self-host Relay with Docker
 
-You can also run a relay with Docker:
+Run a WebSocket relay (single port, Cloudflare Tunnel ready):
 
 ```bash
-docker run -d -p 9009-9013:9009-9013 -e CROC_PASS='YOURPASSWORD' docker.io/schollz/croc
+docker compose up -d
 ```
 
-To send files using your custom relay:
+This binds the relay to `127.0.0.1:9009`. Add a Cloudflare Tunnel service pointing to `http://localhost:9009`, then send files with:
 
 ```bash
-croc --pass YOURPASSWORD --relay "myreal.example.com:9009" send [filename]
+croc --relay "wss://relay.example.com" send [filename]
 ```
 
-To use custom ports, set `CROC_PORTS` (comma-separated) or `CROC_PORT` (base port):
+To set a relay password:
 
 ```bash
-docker run -d -p 9010-9011:9010-9011 -e CROC_PORTS='9010,9011' -e CROC_PASS='YOURPASSWORD' docker.io/schollz/croc
+CROC_PASS=yourpassword docker compose up -d
 ```
 
 #### Web client
