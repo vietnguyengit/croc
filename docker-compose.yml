@@ -6,3 +6,21 @@ services:
       - "127.0.0.1:9009:9009"
     environment:
       - CROC_PASS
+
+  croc-relay-tcp:
+    build: .
+    restart: unless-stopped
+    command: ["relay", "--ports", "9009,9010,9011,9012,9013"]
+    environment:
+      - CROC_PASS
+
+  croc-web:
+    build: .
+    restart: unless-stopped
+    command: ["web", "--relay", "croc-relay-tcp", "--bind", "0.0.0.0:9014"]
+    ports:
+      - "127.0.0.1:9014:9014"
+    environment:
+      - CROC_PASS
+      - SITE_URL=link.vietnguyen.au
+      - CROC_RELAY_PORTS=9009,9010,9011,9012,9013
